@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Citation Network</title>
+    <link href='style.css' rel='stylesheet' type='text/css'>
+    <!-- <link href='search.css' rel='stylesheet' type='text/css'> -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+    <script src="http://spin.js.org/spin.min.js"></script>
+    <style>
+        .link {
+            stroke: lightgrey;
+            stroke-width: 2px;
+        }
+
+        .node {
+            stroke: #fff;
+            stroke-width: 2px;
+        }
+        .textClass {
+            stroke: #323232;
+            font-family: "Lucida Grande", "Droid Sans", Arial, Helvetica, sans-serif;
+            font-weight: normal;
+            stroke-width: .5;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+<h1 id="header">Citation Network</h1>
+<form class="query form">
+  	<input type="text" id='search' placeholder="Enter the DOI of the paper" required>
+	<button id='submit' onclick="searchDoi()">Search</button>
+	<div class="form-inline">
+		<input class="checkbox" type="checkbox" name="category" value="paper" checked>Paper
+		<input class="checkbox" type="checkbox" name="category" value="author" checked>Author
+		<input class="checkbox" type="checkbox" name="category" value="field" checked>Field
+	  	<input class="checkbox" type="checkbox" name="category" value="journal" checked>Journal
+	  	<input class="checkbox" type="checkbox" name="category" value="conference" checked>Conference
+	</div>
+	<input type="text" id='min_degree' placeholder="Min degree (default:80)">
+</form>
+
+<script>
+    var min_zoom = 0.1;
+    var max_zoom = 2;
+    var zoom = d3.behavior.zoom().scaleExtent([min_zoom,max_zoom])
+    var graph;
+    var tooltip = d3.select("body").append("div")
+	    .attr("class", "tooltip")
+	    .style("opacity", 0);
+      var opts = {
+            lines: 13 // The number of lines to draw
+            , length: 28 // The length of each line
+            , width: 14 // The line thickness
+            , radius: 42 // The radius of the inner circle
+            , scale: 0.8 // Scales overall size of the spinner
+            , corners: 1 // Corner roundness (0..1)
+            , color: '#000' // #rgb or #rrggbb or array of colors
+            , opacity: 0.25 // Opacity of the lines
+            , rotate: 0 // The rotation offset
+            , direction: 1 // 1: clockwise, -1: counterclockwise
+            , speed: 1 // Rounds per second
+            , trail: 60 // Afterglow percentage
+            , fps: 20 // Frames per second when using setTimeout() as a fallback for CSS
+            , zIndex: 2e9 // The z-index (defaults to 2000000000)
+            , className: 'spinner' // The CSS class to assign to the spinner
+            , top: '50%' // Top position relative to parent
+            , left: '50%' // Left position relative to parent
+            , shadow: false // Whether to render a shadow
+            , hwaccel: false // Whether to use hardware acceleration
+            , position: 'absolute' // Element positioning
+      }
+    function myGraph() {
+
+        // Add and update elements on the graph object
+        this.addNode = function (node) {
+            if (!findNode(node.id)) {
+                nodes.push(node);
+            }
+            update();
+        };
+
+        this.updateNodes = function(new_nodes) {
+            nodes = force.nodes();
+            for (var i = 0; i < new_nodes.length;i++) {
+                nodes.push(new_nodes[i]);
+            }
+            update();
+        }
+
+        this.addLink = function (source, target, value) {
+            links.push({"source": findNode(source), "target": findNode(target), "value": value});
+            update();
+        };
+
+        this.updateLinks = function(new_links) {
+            links = force.links();
+            for (var i = 0; i < new_links.length;i++) {
+                links.push({"source": findNode(new_links[i].source), "target": findNode(new_links[i].target), "value": 20});
+            }
+            update();
+        }
+
+        function resize() {
+            var width = window.innerWidth, height = window.innerHeight;
+            svg.attr("width", width).attr("height", height);
+
+            force.size([force.size()[0]+(width-w)/zoom.scale(),force.size()[1]+(height-h)/zoom.scale()]).resume();
+            w = width;
+            h = height;
+        }
+
+
+        var findNode = function (id) {
+            for (var i in nodes) {
+                if (nodes[i]["id"] === id) return nodes[i];
+            }
+            ;
+        };
+
+        // set up the D3 visualisation in the specified element
+        var w = window.innerWidth;
+		var h = window.innerHeight;
+
+        var color = d3.scale.category10();
+
+        var svg = d3.select("body")
+                .append("svg:svg")
+                .attr("width", w)
+                .attr("height", h)
+                .attr("id", "svg")
+                .attr("pointer-events", "all")
+                .attr("viewBox", "0 0 " + w + " " + h)
+                .attr("perserveAspectRatio", "xMinYMid")
+
+        svg.append("svg:defs").selectAll("marker")
+		    .data(["end"])      // Different link/path types can be defined here
+		  	.enter().append("svg:marker")    // This section adds in the arrows
+		  	.attr("id", String)
+		    .attr("viewBox", "0 -5 10 10")
+		    .attr("refX", 30)
+		    .attr("refY", -1)
+		    .attr("markerWidth", 6)
+		    .attr("markerHeight", 6)
+		    .attr("orient", "auto")
+		 	.append("svg:path")
+		    .attr("d", "M0,-5L10,0L0,5");
+
+        var vis = svg.append('svg:g');
+
+        var force = d3.layout.force();
+
+        var nodes = force.nodes(),
+            links = force.links();
+
+        var legend_table = svg.selectAll('g')
+        					.data(["Paper", "Conference", "Journal", "Author", "Field", "Paper"])
+        					.enter()
+        					.append('g')
+        					.attr("transform", function(d, i){return "translate(15,"+(30*i+80)+")"})
+			legend_table.append('circle')
+    					.attr('r', 10)
+    					.attr('fill', function(d) {
+    						switch(d) {
+	                    		case 'Paper':
+	                    		// Blue
+	                    			return '#1f77b4';
+	                    		case 'Conference':
+	                    		// Green
+	                    			return '#2ca02c';
+	                    		case 'Journal':
+	                    		// Red
+	                    			return '#d62728';
+	                    		case 'Field':
+	                    		// Brown
+	                    			return '#8c564b';
+	                    		case 'Author':
+	                    		// Orange
+	                    			return '#ff7f0e';
+	                    		default:
+	                    			return 'Black';
+	                    	}
+    					});
+    		legend_table.append('text')
+    					.attr("x", 15)
+	                    .attr("y", ".31em")
+	                    .style("fill", 'black')
+	                    .text(function (d) {
+	                        return d;
+	                    });
+
+        var update = function () {
+            var link = vis.selectAll("line")
+                    .data(links, function (d) {
+                        return d.source.id + "-" + d.target.id;
+                    });
+
+            link.enter().append("line")
+                    .attr("id", function (d) {
+                        return d.source.id + "-" + d.target.id;
+                    })
+                    .attr("stroke-width", function (d) {
+                        return d.value / 10;
+                    })
+                    .style('opacity', 0.5)
+                    .attr("class", "link")
+                    .attr("marker-end", "url(#end)");
+            link.append("title")
+                    .text(function (d) {
+                        return d.value;
+                    });
+            link.exit().remove();
+
+            var node = vis.selectAll("g.node")
+                    .data(nodes, function (d) {
+                        return d.id;
+                    });
+
+            var nodeEnter = node.enter().append("g")
+                    .attr("class", "node")
+                    .call(force.drag);
+
+            nodeEnter.append("svg:circle")
+                    .attr("r", function(d) {
+                    	return Math.min(Math.sqrt(d.degree), 25);
+                    })
+                    .attr("id", function (d) {
+                        return "Node;" + d.id;
+                    })
+                    .attr("class", "nodeStrokeClass")
+                    .attr("fill", function(d) {
+                    	var label = d.attributes.labels[0]
+                    	switch(label) {
+                    		case 'Paper':
+                    		// Blue
+                    			return '#1f77b4';
+                    		case 'Conference':
+                    		// Green
+                    			return '#2ca02c';
+                    		case 'Journal':
+                    		// Red
+                    			return '#d62728';
+                    		case 'Field':
+                    		// Brown
+                    			return '#8c564b';
+                    		case 'Author':
+                    		// Orange
+                    			return '#ff7f0e';
+                    		default:
+                    			return 'Black';
+                    	}
+                 	});
+
+            nodeEnter.append("svg:text")
+                    .attr("class", "textClass")
+                    .attr("x", function(d) {
+                    	return Math.min(Math.sqrt(d.degree), 25) + 5;
+                    })
+                    .attr("y", ".31em")
+                    .style("fill", 'black')
+                    .text(function (d) {
+                        return d.attributes.properties.title || d.attributes.properties.name;
+                    });
+
+            nodeEnter.on("click", function(d) {
+                d.fixed = !d.fixed;
+                expandNode(d.id)
+            })
+
+            nodeEnter.on("mouseover", function(d) {
+            	var text = "";
+            	for (var i in d.attributes.properties) {
+            		if (i != "published_year") {
+            			text = text + i + ": " + d.attributes.properties[i]
+            		} else {
+            			text = text + i + ": " + d.attributes.properties[i]["low"]
+            		}
+            		text += '<br/>'
+            	}
+	            tooltip.transition()
+	                .duration(200)
+	                .style("opacity", 0.75);
+
+	            tooltip.html("<strong><i>" + d.attributes.labels[0] + "</i></strong><br/>"
+	            	+ text + "degree: " + d.degree)
+	                .style("left", (d3.event.pageX + 10) + "px")
+	                .style("top", (d3.event.pageY + 10) + "px");
+
+	        })
+	        .on("mouseout", function(d) {
+	            tooltip.transition()
+	                .duration(200)
+	                .style("opacity", 0);
+	        });
+
+            node.exit().remove();
+
+            zoom.on("zoom", function() {
+	            vis.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+	        });
+
+	        svg.call(zoom);
+
+	        resize();
+
+            force.on("tick", function () {
+
+                node.attr("transform", function (d) {
+                    return "translate(" + d.x + "," + d.y + ")";
+                });
+
+                link.attr("x1", function (d) {
+                    return d.source.x;
+                })
+                        .attr("y1", function (d) {
+                            return d.source.y;
+                        })
+                        .attr("x2", function (d) {
+                            return d.target.x;
+                        })
+                        .attr("y2", function (d) {
+                            return d.target.y;
+                        });
+            });
+
+            // Restart the force layout.
+            force
+                    .gravity(.01)
+                    .charge(-80000)
+                    .friction(0.08)
+                    .linkDistance( function(d) { return d.value * 10 } )
+                    .size([w, h])
+                    .start();
+        };
+
+
+        // Make it all go
+        update();
+    }
+
+    function drawGraph(data) {
+		document.getElementsByClassName('query')[0].style.margin = 0;
+		document.getElementsByClassName('query')[0].style.width = "370px";
+		document.getElementsByClassName('query')[0].style.position = 'absolute';
+		document.getElementsByClassName('query')[0].style["font-size"] = "15px";
+        graph = new myGraph("#svgdiv");
+
+        graph.updateNodes(data.nodes);
+        graph.updateLinks(data.links);
+        keepNodesOnTop();
+
+    }
+
+    // because of the way the network is created, nodes are created first, and links second,
+    // so the lines were on top of the nodes, this just reorders the DOM to put the svg:g on top
+    function keepNodesOnTop() {
+        $(".nodeStrokeClass").each(function( index ) {
+            var gnode = this.parentNode;
+            gnode.parentNode.appendChild(gnode);
+        });
+    }
+    function searchDoi() {
+    	event.preventDefault();
+    	var doi = document.getElementById("search").value;
+    	var filter = [];
+    	$('.checkbox:checked').each(function() {
+    		filter.push(this.value);
+    	});
+    	var min_degree = document.getElementById("min_degree").value;
+    	if (!isNumber(min_degree) || min_degree < 0) {
+    		min_degree = 80
+    	}
+
+
+        var target = document.getElementById('submit');
+        var spinner = new Spinner(opts).spin(target);
+        var categories = "";
+        if (filter.length > 0) {
+      		categories = 'neighbor_types: ['
+      		for (var i in filter) {
+      			categories = categories + filter[i].toUpperCase() + ','
+      		}
+      		categories += ']'
+      	}
+        var query = '{paper(doi:"' + doi + '", min_degrees:' + min_degree + ',' + categories + '){id, degree, attributes,out_neighbors{id, attributes, degree}, \
+              in_neighbors{id, attributes, degree, in_neighbors{id, attributes, degree}, out_neighbors{id, attributes, degree}}}}';
+        $.ajax({
+	    	url: '/graphql',
+	    	type: 'POST',
+	    	data: {"query": query},
+	    	success: function(response){
+          $("#header").remove();
+          spinner.stop();
+	    		d3.select("svg").remove();
+	    		var result = response.data.paper
+	        	var nodes = [];
+	        	var links = [];
+	        	nodes.push({'id': result.id, 'attributes': JSON.parse(result.attributes), 'degree': result.degree})
+	        	var neighbors = result.in_neighbors.concat(result.out_neighbors)
+	        	for (var i in neighbors) {
+	        		nodes.push({'id': neighbors[i].id, 'attributes': JSON.parse(neighbors[i].attributes), 'degree': neighbors[i].degree})
+	        	}
+	        	for (var i in result.in_neighbors) {
+	        		var neighbors_of_in = result.in_neighbors[i].in_neighbors.concat(result.in_neighbors[i].out_neighbors)
+		        	for (var j in neighbors_of_in) {
+		        		nodes.push({'id': neighbors_of_in[j].id, 'attributes': JSON.parse(neighbors_of_in[j].attributes), 'degree': neighbors_of_in[j].degree})
+		        	}
+		        	for (var j in result.in_neighbors[i].in_neighbors) {
+						links.push({'source': result.in_neighbors[i].in_neighbors[j].id, 'target': result.in_neighbors[i].id})
+		        	}
+		        	for (var j in result.in_neighbors[i].out_neighbors) {
+						links.push({'target': result.in_neighbors[i].out_neighbors[j].id, 'source': result.in_neighbors[i].id})
+		        	}
+	        		links.push({'source': result.in_neighbors[i].id, 'target': result.id})
+	        	}
+	        	for (var i in result.out_neighbors) {
+	        		links.push({'target': result.out_neighbors[i].id, 'source': result.id})
+	        	}
+	        	drawGraph({'nodes': nodes, 'links': links})
+		    }
+		});
+    }
+
+    function expandNode(id) {
+        event.preventDefault();
+        var filter = [];
+        $('.checkbox:checked').each(function() {
+            filter.push(this.value);
+        });
+        var min_degree = document.getElementById("min_degree").value;
+        if (!isNumber(min_degree) || min_degree < 0) {
+            min_degree = 80
+        }
+
+        var target = document.getElementById('submit');
+        var spinner = new Spinner(opts).spin(target);
+        var categories = "";
+        if (filter.length > 0) {
+          categories = 'neighbor_types: ['
+          for (var i in filter) {
+            categories = categories + filter[i].toUpperCase() + ','
+          }
+          categories += ']'
+        }
+        var query = '{node(id:'+id+', min_degrees:'+min_degree+','+categories+',limit:10){id, degree, attributes,out_neighbors{id, attributes, degree},\
+      				in_neighbors{id, attributes, degree}}}';
+
+        $.ajax({
+            url: '/graphql',
+            type: 'POST',
+            data: {"query": query},
+            success: function(response){
+              spinner.stop();
+                var result = response.data.node;
+                var neighbors = result.in_neighbors.concat(result.out_neighbors)
+                for (var i in neighbors) {
+                    graph.addNode({'id': neighbors[i].id, 'attributes': JSON.parse(neighbors[i].attributes), 'degree': neighbors[i].degree})
+                }
+                for (var i in result.in_neighbors) {
+                    graph.addLink(result.in_neighbors[i].id, result.id, 20)
+                }
+                for (var i in result.out_neighbors) {
+                    graph.addLink(result.id, result.out_neighbors[i].id, 20)
+                }
+                keepNodesOnTop();
+            }
+        });
+    }
+
+    function isNumber(n) {
+	  return !isNaN(parseFloat(n)) && isFinite(n);
+	}
+
+
+</script>
+</body>
+</html>

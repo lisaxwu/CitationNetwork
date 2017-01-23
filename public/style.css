@@ -1,0 +1,48 @@
+body {
+    /*font: 11px sans-serif;*/
+    /*font-weight: 400;*/
+    text-align: center;
+    /*background: #202020;*/
+    /*color: #ff0000;*/
+    /*font-family: 'Montserrat', sans-serif;*/
+}
+
+.tooltip {
+    background: #202020;
+    color: white;
+    border-radius: 5px;
+    position: absolute;
+    padding: 10px;
+    pointer-events: none;
+    text-align: left;
+    opacity: .25;
+}
+
+.query {
+	font-size: 20px;
+	/*margin-top: 200px;*/
+	/*position: absolute;*/
+	/*float: left;*/
+}
+
+#search {
+	width: 300px;
+}
+
+#min_degree {
+	font-size: 15px;
+	margin-right: 210px;
+}
+
+input.checkbox {
+	margin-right: 5px!important;
+}
+
+#legend_table {
+	z-index: 1000;
+	position: absolute;
+}
+
+#header {
+  margin-top: 200px;
+}
